@@ -56,13 +56,29 @@ async function calculateRSI(prices) {
     return parseFloat(rsi.toFixed(2));
 }
 
+async function fetchPriceWithRetry(url, maxRetries = 5, initialDelay = 1000) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const response = await axios.get(url);
+            return response.data;
+        } catch (error) {
+            if (error.response && error.response.status === 429) {
+                const delay = initialDelay * Math.pow(2, attempt); // Exponential backoff
+                console.warn(`⚠️ Rate limit hit. Retrying in ${delay / 1000} seconds... (Attempt ${attempt + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                throw error; // Re-throw other errors
+            }
+        }
+        throw new Error("❌ Max retries exceeded. Unable to fetch data.");
+    }
+
 // RSI bot loop with 1-minute interval
 setInterval(async () => {
     try {
-        const response = await axios.get(
-            `https://api.coingecko.com/api/v3/simple/price?ids=${symbol}&vs_currencies=${currency}`
-        );
-        const price = response.data[symbol][currency];
+        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${symbol}&vs_currencies=${currency}`;
+        const response = await fetchPriceWithRetry(url);
+        const price = response[symbol][currency];
         console.log(`📊 Price: £${price}`);
 
         prices.push(price);
@@ -117,6 +133,6 @@ setInterval(async () => {
             console.log(`⏳ Waiting for ${dataPoints} data points to calculate RSI.`);
         }
     } catch (error) {
-        console.error("❌ Error fetching data:", error.message);
+        console.error("❌ Error:", error); // Log the full error for debugging
     }
 }, intervalSeconds * 1000);
